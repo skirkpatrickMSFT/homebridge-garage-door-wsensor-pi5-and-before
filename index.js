@@ -42,7 +42,7 @@ function GarageDoorOpener(log, config) {
     this.invertDoorState = defaultVal(config["invertDoorState"], false);
     this.invertSensorState = defaultVal(config['invertSensorState'], false);
     this.default = defaultVal(config["default_state"], false);
-    this.duration = defaultVal(config["duration_ms"], 500);
+    this.duration = defaultVal(config["duration_ms"], 200);
     this.pullConfig = defaultVal(config["input_pull"], "none");
     this.gpiochip = defaultVal(config["gpiochip"], null); // null = auto-detect
     // legacyGpiod: set true only on Pi 4 / older systems with gpiod v1
@@ -206,7 +206,7 @@ GarageDoorOpener.prototype.gpioSensorVal = function (val) {
 
 GarageDoorOpener.prototype.gpioDoorVal = function (val) {
     if (this.invertDoorState) val = !val;
-    return val ? 1 : 0;
+    return val ? 0 : 1; // active-LOW relay: 0=trigger, 1=release
 }
 
 var is_int = function (n) {

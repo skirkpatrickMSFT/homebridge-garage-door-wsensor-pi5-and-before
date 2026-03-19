@@ -51,6 +51,7 @@ function GarageDoorOpener(log, config) {
     this.doorState = 0;
     this.sensorChange = 0;
     this.service = null;
+    this.relayLastFired = 0; // timestamp of last relay activation (ms)
 
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
@@ -157,15 +158,22 @@ GarageDoorOpener.prototype.readSensorState = function () {
 }
 
 // Pulse the relay for duration_ms then release (async, non-blocking)
+// Cooldown prevents re-firing within 3 seconds to guard against HomeKit
+// echoing state changes back as set commands.
 GarageDoorOpener.prototype.setState = function (activate) {
     if (!activate) return;
+    var now = Date.now();
+    if (now - this.relayLastFired < 3000) {
+        this.log("Relay cooldown active, ignoring trigger");
+        return;
+    }
+    this.relayLastFired = now;
     var gpioVal = this.gpioDoorVal(1);
     var ms = this.duration > 0 ? this.duration : 500;
-    // v2: gpioset -t <ms>ms -c <chip> <pin>=<val>
-    // v1: gpioset -m time -u <us> <chip> <pin>=<val>
     var cmd = this.legacyGpiod
         ? `gpioset -m time -u ${ms * 1000} ${this.gpiochip} ${this.doorRelayPin}=${gpioVal}`
         : `gpioset -t ${ms}ms -c ${this.gpiochip} ${this.doorRelayPin}=${gpioVal}`;
+    this.log("Pulsing relay: %s", cmd);
     exec(cmd, { timeout: ms + 5000 }, (err) => {
         if (err && !err.killed) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
     });

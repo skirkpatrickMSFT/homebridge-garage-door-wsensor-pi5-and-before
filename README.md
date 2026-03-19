@@ -79,7 +79,50 @@ Add the following to the `accessories` section of your Homebridge `config.json`:
 - Connect one leg of the sensor to the GPIO pin specified by `doorSensorPin`.
 - Connect the other leg to ground (if using `input_pull: "up"`) or to 3.3V (if using `input_pull: "down"`).
 
-> **Tip:** Use the Raspberry Pi board pin numbers (not BCM numbers) when configuring `doorRelayPin` and `doorSensorPin`.
+> **Important:** This plugin uses **pigpio**, which requires **BCM GPIO numbers** — NOT physical board pin numbers. Use the table below to find the correct value for your config.
+
+---
+
+## GPIO Pin Map: Physical Board vs BCM (pigpio)
+
+The Raspberry Pi header has 40 physical pins. Only the GPIO pins are usable — use the **BCM** column in your `config.json`.
+
+```
+Physical  BCM  |  Physical  BCM
+Pin   1   3.3V |  Pin   2   5V
+Pin   3     2  |  Pin   4   5V
+Pin   5     3  |  Pin   6   GND
+Pin   7     4  |  Pin   8   14
+Pin   9   GND  |  Pin  10   15
+Pin  11    17  |  Pin  12   18
+Pin  13    27  |  Pin  14   GND
+Pin  15    22  |  Pin  16   23
+Pin  17   3.3V |  Pin  18   24
+Pin  19    10  |  Pin  20   GND
+Pin  21     9  |  Pin  22   25
+Pin  23    11  |  Pin  24    8
+Pin  25   GND  |  Pin  26    7
+Pin  27     0  |  Pin  28    1
+Pin  29     5  |  Pin  30   GND
+Pin  31     6  |  Pin  32   12
+Pin  33    13  |  Pin  34   GND
+Pin  35    19  |  Pin  36   16
+Pin  37    26  |  Pin  38   20
+Pin  39   GND  |  Pin  40   21
+```
+
+**Common examples:**
+
+| Physical Pin | BCM GPIO | Use in config |
+|:---:|:---:|:---|
+| 11 | 17 | `"doorRelayPin": 17` |
+| 13 | 27 | `"doorSensorPin": 27` |
+| 15 | 22 | `"doorRelayPin": 22` |
+| 16 | 23 | `"doorSensorPin": 23` |
+| 18 | 24 | `"doorRelayPin": 24` |
+| 22 | 25 | `"doorSensorPin": 25` |
+
+> **Tip:** You can also run `pinout` on the Raspberry Pi terminal for a live visual diagram of your board.
 
 ---
 

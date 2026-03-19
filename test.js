@@ -8,26 +8,27 @@
 
 const Module = require('module');
 
-// ─── Mock rpio (intercept before Node tries to resolve the native module) ────
+// ─── Mock pigpio (intercept before Node tries to resolve the native module) ───
 let lastRelayWrite = null;
-let mockSensorReading = 1; // 1 = HIGH = closed
+let mockSensorReading = 1; // 1 = closed
 
-const mockRpio = {
-    OUTPUT: 'OUTPUT',
-    INPUT:  'INPUT',
-    HIGH:   1,
-    LOW:    0,
-    PULL_UP:   'PULL_UP',
-    PULL_DOWN: 'PULL_DOWN',
-    PULL_OFF:  'PULL_OFF',
-    open:  () => {},
-    write: (_pin, val) => { lastRelayWrite = val; },
-    read:  () => mockSensorReading,
-};
+class MockGpio {
+    constructor(pin, opts) {
+        this._pin = pin;
+        this._mode = opts && opts.mode;
+    }
+    digitalWrite(val) { lastRelayWrite = val; }
+    digitalRead()     { return mockSensorReading; }
+}
+MockGpio.OUTPUT  = 1;
+MockGpio.INPUT   = 0;
+MockGpio.PUD_UP   = 2;
+MockGpio.PUD_DOWN = 1;
+MockGpio.PUD_OFF  = 0;
 
 const _originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
-    if (request === 'rpio') return mockRpio;
+    if (request === 'pigpio') return { Gpio: MockGpio };
     return _originalLoad.apply(this, arguments);
 };
 

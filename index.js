@@ -1,5 +1,5 @@
 var Service, Characteristic, TargetDoorState, CurrentDoorState;
-var rpio = require('rpio');
+const { Gpio } = require('pigpio');
 
 module.exports = function (homebridge) {
     Service = homebridge.hap.Service;
@@ -10,6 +10,7 @@ module.exports = function (homebridge) {
     homebridge.registerAccessory('homebridge-garage-door-wsensor', 'Garage Door Opener', GarageDoorOpener);
 }
 
+// NOTE: doorRelayPin and doorSensorPin must be BCM GPIO numbers (not physical board pin numbers)
 function GarageDoorOpener(log, config) {
     this.log = log;
     this.name = config.name;
@@ -25,14 +26,22 @@ function GarageDoorOpener(log, config) {
     this.doorState = 0;
     this.sensorChange = 0;
     this.service = null;
+    this.timerid = -1;
 
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
     if (!is_int(this.duration)) throw new Error("The config value 'duration' must be an integer number of milliseconds.");
 
     this.log("Creating a garage door relay named '%s', initial state: %s", this.name, (this.invertDoorState ? "OPEN" : "CLOSED"));
-    rpio.open(this.doorRelayPin, rpio.OUTPUT, this.gpioDoorVal(this.invertDoorState));
-    rpio.open(this.doorSensorPin, rpio.INPUT, this.translatePullConfig(this.pullConfig));
+
+    this.relayGpio = new Gpio(this.doorRelayPin, { mode: Gpio.OUTPUT });
+    this.relayGpio.digitalWrite(this.gpioDoorVal(this.invertDoorState));
+
+    this.sensorGpio = new Gpio(this.doorSensorPin, {
+        mode: Gpio.INPUT,
+        pullUpDown: this.translatePullConfig(this.pullConfig)
+    });
+
     this.checkSensor(e => {});
 }
 
@@ -89,12 +98,13 @@ GarageDoorOpener.prototype.checkSensor = function (callback) {
 }
 
 GarageDoorOpener.prototype.readSensorState = function () {
-    var val = this.gpioSensorVal(rpio.read(this.doorSensorPin));
-    return val == rpio.HIGH ? 1 : 0; // closed / opened
+    var raw = this.sensorGpio.digitalRead();
+    var val = this.gpioSensorVal(raw);
+    return val === 1 ? 1 : 0; // closed / opened
 }
 
 GarageDoorOpener.prototype.setState = function (val) {
-    rpio.write(this.doorRelayPin, this.gpioDoorVal(val));
+    this.relayGpio.digitalWrite(this.gpioDoorVal(val));
 }
 
 // Homebridge 1.x: callback-based set handler
@@ -151,18 +161,18 @@ GarageDoorOpener.prototype.timeOutCB = function (o) {
 
 GarageDoorOpener.prototype.gpioSensorVal = function (val) {
     if (this.invertSensorState) val = !val;
-    return val ? rpio.HIGH : rpio.LOW;
+    return val ? 1 : 0;
 }
 
 GarageDoorOpener.prototype.gpioDoorVal = function (val) {
     if (this.invertDoorState) val = !val;
-    return val ? rpio.LOW : rpio.HIGH;
+    return val ? 0 : 1; // reversed logic
 }
 
 GarageDoorOpener.prototype.translatePullConfig = function (val) {
-    if (val == "up") return rpio.PULL_UP;
-    else if (val == "down") return rpio.PULL_DOWN;
-    else return rpio.PULL_OFF;
+    if (val == "up") return Gpio.PUD_UP;
+    else if (val == "down") return Gpio.PUD_DOWN;
+    else return Gpio.PUD_OFF;
 }
 
 var is_int = function (n) {

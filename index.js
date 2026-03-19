@@ -147,7 +147,12 @@ GarageDoorOpener.prototype.readSensorState = function () {
         var cmd = this.gpiodV2
             ? `gpioget -c ${this.gpiochip} ${this.doorSensorPin}`
             : `gpioget ${this.gpiochip} ${this.doorSensorPin}`;
-        var raw = parseInt(execSync(cmd, { timeout: 1000 }).toString().trim(), 10);
+        var output = execSync(cmd, { timeout: 1000 }).toString().trim();
+        // gpiod v2 outputs "active"/"inactive"; v1 outputs "0"/"1"
+        var raw;
+        if (output === 'active')   raw = 1;
+        else if (output === 'inactive') raw = 0;
+        else raw = parseInt(output, 10) || 0;
         var val = this.gpioSensorVal(raw);
         return val === 1 ? 1 : 0;
     } catch (e) {

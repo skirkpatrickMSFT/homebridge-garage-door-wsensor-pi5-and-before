@@ -16,6 +16,7 @@ let lastExecSyncCmd = null;
 const mockChildProcess = {
     execSync(cmd, opts) {
         lastExecSyncCmd = cmd;
+        if (cmd === 'gpiodetect') return Buffer.from('gpiochip0 [pinctrl-bcm2711] (58 lines)\n');
         if (cmd.startsWith('gpioget')) return Buffer.from(String(mockSensorReading));
         return Buffer.from('');
     },

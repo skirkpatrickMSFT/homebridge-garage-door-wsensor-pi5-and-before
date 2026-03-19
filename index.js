@@ -1,7 +1,26 @@
 var Service, Characteristic, TargetDoorState, CurrentDoorState;
 const { execSync, exec } = require('child_process');
 
-const GPIO_CHIP = 'gpiochip0';
+// Auto-detect the GPIO chip that represents the 40-pin header.
+// Pi 4 -> gpiochip0 [pinctrl-bcm2711], Pi 5 -> gpiochip4 [pinctrl-rp1]
+function detectGpioChip(log) {
+    try {
+        var output = execSync('gpiodetect', { timeout: 2000 }).toString();
+        var lines = output.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            if (lines[i].includes('pinctrl')) {
+                var m = lines[i].match(/^(gpiochip\d+)/);
+                if (m) return m[1];
+            }
+        }
+        // Fallback: return the first chip listed
+        var first = lines[0] && lines[0].match(/^(gpiochip\d+)/);
+        return first ? first[1] : 'gpiochip0';
+    } catch (e) {
+        if (log) log.warn('gpiodetect failed, defaulting to gpiochip0: ' + e.message.split('\n')[0]);
+        return 'gpiochip0';
+    }
+}
 
 module.exports = function (homebridge) {
     Service = homebridge.hap.Service;
@@ -26,7 +45,7 @@ function GarageDoorOpener(log, config) {
     this.default = defaultVal(config["default_state"], false);
     this.duration = defaultVal(config["duration_ms"], 500);
     this.pullConfig = defaultVal(config["input_pull"], "none");
-    this.gpiochip = defaultVal(config["gpiochip"], GPIO_CHIP);
+    this.gpiochip = defaultVal(config["gpiochip"], null); // null = auto-detect
     this.doorState = 0;
     this.sensorChange = 0;
     this.service = null;
@@ -34,6 +53,11 @@ function GarageDoorOpener(log, config) {
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
     if (!is_int(this.duration)) throw new Error("The config value 'duration' must be an integer number of milliseconds.");
+
+    if (!this.gpiochip) {
+        this.gpiochip = detectGpioChip(this.log);
+        this.log("Auto-detected GPIO chip: %s", this.gpiochip);
+    }
 
     this.log("Creating a garage door relay named '%s', initial state: %s", this.name, (this.invertDoorState ? "OPEN" : "CLOSED"));
 

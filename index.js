@@ -1,6 +1,19 @@
 var Service, Characteristic, TargetDoorState, CurrentDoorState;
 const { execSync, exec } = require('child_process');
 
+// Detect gpiod major version (v1 vs v2 have incompatible CLI syntax)
+// v1: gpioget <chip> <pin>       v2: gpioget -c <chip> <pin>
+// v1: gpioset -m time -u <us>    v2: gpioset -t <ms>ms -c <chip>
+function detectGpiodVersion() {
+    try {
+        var out = execSync('gpioget -v 2>&1', { timeout: 2000 }).toString();
+        var m = out.match(/v?(\d+)\./);
+        return m ? parseInt(m[1], 10) : 1;
+    } catch (e) {
+        return 1;
+    }
+}
+
 // Auto-detect the GPIO chip that represents the 40-pin header.
 // Pi 4 -> gpiochip0 [pinctrl-bcm2711], Pi 5 -> gpiochip4 [pinctrl-rp1]
 function detectGpioChip(log) {
@@ -58,6 +71,9 @@ function GarageDoorOpener(log, config) {
         this.gpiochip = detectGpioChip(this.log);
         this.log("Auto-detected GPIO chip: %s", this.gpiochip);
     }
+
+    this.gpiodV2 = detectGpiodVersion() >= 2;
+    this.log("gpiod version: %s", this.gpiodV2 ? 'v2+' : 'v1');
 
     this.log("Creating a garage door relay named '%s', initial state: %s", this.name, (this.invertDoorState ? "OPEN" : "CLOSED"));
 
@@ -128,10 +144,10 @@ GarageDoorOpener.prototype.checkSensor = function (callback) {
 
 GarageDoorOpener.prototype.readSensorState = function () {
     try {
-        var raw = parseInt(
-            execSync(`gpioget ${this.gpiochip} ${this.doorSensorPin}`, { timeout: 1000 }).toString().trim(),
-            10
-        );
+        var cmd = this.gpiodV2
+            ? `gpioget -c ${this.gpiochip} ${this.doorSensorPin}`
+            : `gpioget ${this.gpiochip} ${this.doorSensorPin}`;
+        var raw = parseInt(execSync(cmd, { timeout: 1000 }).toString().trim(), 10);
         var val = this.gpioSensorVal(raw);
         return val === 1 ? 1 : 0;
     } catch (e) {
@@ -140,16 +156,19 @@ GarageDoorOpener.prototype.readSensorState = function () {
     }
 }
 
-// Pulse the relay for duration_ms using gpioset -m time (async, non-blocking)
+// Pulse the relay for duration_ms then release (async, non-blocking)
 GarageDoorOpener.prototype.setState = function (activate) {
-    if (!activate) return; // gpioset -m time releases the line automatically after the pulse
+    if (!activate) return;
     var gpioVal = this.gpioDoorVal(1);
-    var durationUs = (this.duration > 0 ? this.duration : 500) * 1000;
-    exec(`gpioset -m time -u ${durationUs} ${this.gpiochip} ${this.doorRelayPin}=${gpioVal}`,
-        { timeout: durationUs / 1000 + 5000 },
-        (err) => {
-            if (err && !err.killed) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
-        });
+    var ms = this.duration > 0 ? this.duration : 500;
+    // v2: gpioset -t <ms>ms -c <chip> <pin>=<val>
+    // v1: gpioset -m time -u <us> <chip> <pin>=<val>
+    var cmd = this.gpiodV2
+        ? `gpioset -t ${ms}ms -c ${this.gpiochip} ${this.doorRelayPin}=${gpioVal}`
+        : `gpioset -m time -u ${ms * 1000} ${this.gpiochip} ${this.doorRelayPin}=${gpioVal}`;
+    exec(cmd, { timeout: ms + 5000 }, (err) => {
+        if (err && !err.killed) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
+    });
 }
 
 // Homebridge 1.x: callback-based set handler

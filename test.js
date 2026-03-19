@@ -17,9 +17,8 @@ const mockChildProcess = {
     execSync(cmd, opts) {
         lastExecSyncCmd = cmd;
         if (cmd === 'gpiodetect') return Buffer.from('gpiochip0 [pinctrl-bcm2711] (58 lines)\n');
-        if (cmd === 'gpioget -v') return Buffer.from('gpioget (libgpiod) v2.1\n');
         if (cmd.startsWith('gpioget')) {
-            // v2 returns "active"/"inactive"; simulate v2 since mock reports v2
+            // v2 syntax probe and reads: return active/inactive
             return Buffer.from(mockSensorReading ? 'active' : 'inactive');
         }
         return Buffer.from('');

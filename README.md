@@ -46,8 +46,8 @@ Add the following to the `accessories` section of your Homebridge `config.json`:
 {
     "accessory": "Garage Door Opener",
     "name": "Garage Door",
-    "doorRelayPin": 11,
-    "doorSensorPin": 13,
+    "doorRelayPin": 8,
+    "doorSensorPin": 23,
     "duration_ms": 500,
     "invertDoorState": false,
     "invertSensorState": false,
@@ -55,13 +55,15 @@ Add the following to the `accessories` section of your Homebridge `config.json`:
 }
 ```
 
+> **Note:** `doorRelayPin` and `doorSensorPin` must be **BCM GPIO numbers** (not physical board pin numbers). See the [GPIO Pin Map](#gpio-pin-map-physical-board-vs-bcm-pigpio) section below.
+
 ### Configuration Options
 
 | Option             | Type    | Required | Default | Description |
 |--------------------|---------|----------|---------|-------------|
 | `name`             | string  | Yes      | —       | Name of the accessory as it appears in HomeKit |
-| `doorRelayPin`     | integer | Yes      | —       | GPIO pin number (board numbering) connected to the relay |
-| `doorSensorPin`    | integer | Yes      | —       | GPIO pin number (board numbering) connected to the door sensor |
+| `doorRelayPin`     | integer | Yes      | —       | **BCM** GPIO number connected to the relay (see pin map below) |
+| `doorSensorPin`    | integer | Yes      | —       | **BCM** GPIO number connected to the door sensor (see pin map below) |
 | `duration_ms`      | integer | No       | `0`     | How long (in milliseconds) to hold the relay closed. Set to `0` to hold indefinitely |
 | `invertDoorState`  | boolean | No       | `false` | Invert the relay output logic (HIGH/LOW) for the door |
 | `invertSensorState`| boolean | No       | `false` | Invert the sensor reading logic |
@@ -80,6 +82,27 @@ Add the following to the `accessories` section of your Homebridge `config.json`:
 - Connect the other leg to ground (if using `input_pull: "up"`) or to 3.3V (if using `input_pull: "down"`).
 
 > **Important:** This plugin uses **pigpio**, which requires **BCM GPIO numbers** — NOT physical board pin numbers. Use the table below to find the correct value for your config.
+
+### Migrating from rpio (old plugin version)?
+
+If you were previously using this plugin with `rpio`, your config used **physical board pin numbers**. You must convert them to BCM numbers:
+
+| Old rpio config value (physical pin) | New pigpio config value (BCM) |
+|:---:|:---:|
+| 11 | 17 |
+| 12 | 18 |
+| 13 | 27 |
+| 15 | 22 |
+| 16 | 23 |
+| 18 | 24 |
+| 19 | 10 |
+| 21 | 9 |
+| 22 | 25 |
+| 23 | 11 |
+| 24 | 8 |
+| 26 | 7 |
+
+For any pin not listed, use the full GPIO Pin Map below.
 
 ---
 

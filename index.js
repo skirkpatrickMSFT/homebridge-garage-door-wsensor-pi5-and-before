@@ -5,13 +5,25 @@ const { execSync, exec } = require('child_process');
 // v1: gpioget <chip> <pin>       v2: gpioget -c <chip> <pin>
 // v1: gpioset -m time -u <us>    v2: gpioset -t <ms>ms -c <chip>
 function detectGpiodVersion() {
-    try {
-        var out = execSync('gpioget -v 2>&1', { timeout: 2000 }).toString();
-        var m = out.match(/v?(\d+)\./);
-        return m ? parseInt(m[1], 10) : 1;
-    } catch (e) {
-        return 1;
+    // Some builds exit non-zero even for --version; check stdout/stderr either way
+    function parseVersion(str) {
+        var m = str && str.match(/v?(\d+)\./);
+        return m ? parseInt(m[1], 10) : null;
     }
+    var flags = ['--version', '-v', '-h', '--help'];
+    for (var i = 0; i < flags.length; i++) {
+        try {
+            var out = execSync('gpioget ' + flags[i] + ' 2>&1', { timeout: 2000 }).toString();
+            var v = parseVersion(out);
+            if (v) return v;
+        } catch (e) {
+            // execSync throws on non-zero exit - version text may still be in output
+            var combined = [e.stdout, e.stderr].map(b => b ? b.toString() : '').join('');
+            var v = parseVersion(combined);
+            if (v) return v;
+        }
+    }
+    return 1; // safe default
 }
 
 // Auto-detect the GPIO chip that represents the 40-pin header.
@@ -73,7 +85,13 @@ function GarageDoorOpener(log, config) {
     }
 
     this.gpiodV2 = detectGpiodVersion() >= 2;
-    this.log("gpiod version: %s", this.gpiodV2 ? 'v2+' : 'v1');
+    this.log("gpiod version: %s  chip: %s  sensor cmd: %s",
+        this.gpiodV2 ? 'v2+' : 'v1',
+        this.gpiochip,
+        this.gpiodV2
+            ? `gpioget -c ${this.gpiochip} ${this.doorSensorPin}`
+            : `gpioget ${this.gpiochip} ${this.doorSensorPin}`
+    );
 
     this.log("Creating a garage door relay named '%s', initial state: %s", this.name, (this.invertDoorState ? "OPEN" : "CLOSED"));
 

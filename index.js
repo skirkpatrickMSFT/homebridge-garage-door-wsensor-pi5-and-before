@@ -52,7 +52,6 @@ function GarageDoorOpener(log, config) {
     this.targetState = 0;     // desired state from HomeKit commands
     this.sensorChange = 0;
     this.service = null;
-    this.relayLastFired = 0;
 
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
@@ -169,24 +168,23 @@ GarageDoorOpener.prototype.readSensorState = function () {
     }
 }
 
-// Pulse relay for duration_ms using the correct gpiod hold-period flag:
-// v2: gpioset -p <ms>ms -c <chip> <pin>=0  (holds LOW then exits/releases)
-// v1: gpioset -m time -u <us> <chip> <pin>=0
+// Pulse relay using 'timeout' to hold the line for duration_ms then release.
+// 'timeout Ns gpioset -c chip pin=0' blocks gpioset for N seconds then kills
+// it, which releases the GPIO line. Works reliably with all gpiod v2 builds.
+// v1 fallback uses -m time -u <microseconds>.
 GarageDoorOpener.prototype.setState = function (activate) {
     if (!activate) return;
-    var now = Date.now();
-    if (now - this.relayLastFired < 5000) {
-        this.log("Relay cooldown active, ignoring trigger (last fired %dms ago)", now - this.relayLastFired);
-        return;
-    }
-    this.relayLastFired = now;
     var ms = this.duration > 0 ? this.duration : 200;
+    var seconds = (ms / 1000).toFixed(3);
     var cmd = this.legacyGpiod
         ? `gpioset -m time -u ${ms * 1000} ${this.gpiochip} ${this.doorRelayPin}=0`
-        : `gpioset -p ${ms}ms -c ${this.gpiochip} ${this.doorRelayPin}=0`;
+        : `timeout ${seconds} gpioset -c ${this.gpiochip} ${this.doorRelayPin}=0`;
     this.log("Relay pulse: %s", cmd);
     exec(cmd, { timeout: ms + 3000 }, (err) => {
-        if (err && !err.killed) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
+        if (err && err.code !== null && err.code !== 124) {
+            // code 124 = timeout killed the process (expected/normal)
+            this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
+        }
     });
 }
 

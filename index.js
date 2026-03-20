@@ -84,12 +84,20 @@ function GarageDoorOpener(log, config) {
     }
 
     this.checkSensor(e => {});
+
+    // Sync targetState with physical state at startup so HomeKit sees no
+    // mismatch on first poll and doesn't immediately send an onSet command
+    this.targetState = this.readSensorState();
+    this.doorState = this.targetState;
+    this.sensorChange = this.targetState;
+    this.log("Initial door state: %s", this.targetState === 0 ? 'CLOSED' : 'OPEN');
 }
 
 GarageDoorOpener.prototype.getServices = function () {
+    var initialState = this.targetState;
     this.service = new Service.GarageDoorOpener(this.name, this.name);
-    this.service.setCharacteristic(TargetDoorState, TargetDoorState.CLOSED);
-    this.service.setCharacteristic(CurrentDoorState, CurrentDoorState.CLOSED);
+    this.service.setCharacteristic(TargetDoorState, initialState);
+    this.service.setCharacteristic(CurrentDoorState, initialState);
 
     var currentDoorChar = this.service.getCharacteristic(CurrentDoorState);
     var targetDoorChar = this.service.getCharacteristic(TargetDoorState);
@@ -167,8 +175,8 @@ GarageDoorOpener.prototype.readSensorState = function () {
 GarageDoorOpener.prototype.setState = function (activate) {
     if (!activate) return;
     var now = Date.now();
-    if (now - this.relayLastFired < 3000) {
-        this.log("Relay cooldown active, ignoring trigger");
+    if (now - this.relayLastFired < 5000) {
+        this.log("Relay cooldown active, ignoring trigger (last fired %dms ago)", now - this.relayLastFired);
         return;
     }
     this.relayLastFired = now;

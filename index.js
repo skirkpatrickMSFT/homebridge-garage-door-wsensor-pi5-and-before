@@ -169,9 +169,9 @@ GarageDoorOpener.prototype.readSensorState = function () {
     }
 }
 
-// Pulse relay: set LOW (activate), wait duration_ms, set HIGH (release)
-// NOTE: gpiod v2 -t flag means "toggle period" (repeating), NOT "hold time".
-// Use two separate gpioset calls with setTimeout instead.
+// Pulse relay for duration_ms using the correct gpiod hold-period flag:
+// v2: gpioset -p <ms>ms -c <chip> <pin>=0  (holds LOW then exits/releases)
+// v1: gpioset -m time -u <us> <chip> <pin>=0
 GarageDoorOpener.prototype.setState = function (activate) {
     if (!activate) return;
     var now = Date.now();
@@ -181,20 +181,12 @@ GarageDoorOpener.prototype.setState = function (activate) {
     }
     this.relayLastFired = now;
     var ms = this.duration > 0 ? this.duration : 200;
-    var chip = this.gpiochip;
-    var pin = this.doorRelayPin;
-    var onCmd  = this.legacyGpiod ? `gpioset ${chip} ${pin}=0` : `gpioset -c ${chip} ${pin}=0`;
-    var offCmd = this.legacyGpiod ? `gpioset ${chip} ${pin}=1` : `gpioset -c ${chip} ${pin}=1`;
-
-    this.log("Relay ON: %s  (hold %dms)", onCmd, ms);
-    exec(onCmd, (err) => {
-        if (err) { this.log.error('gpioset ON error: ' + err.message.split('\n')[0]); return; }
-        setTimeout(() => {
-            this.log("Relay OFF: %s", offCmd);
-            exec(offCmd, (err2) => {
-                if (err2) this.log.error('gpioset OFF error: ' + err2.message.split('\n')[0]);
-            });
-        }, ms);
+    var cmd = this.legacyGpiod
+        ? `gpioset -m time -u ${ms * 1000} ${this.gpiochip} ${this.doorRelayPin}=0`
+        : `gpioset -p ${ms}ms -c ${this.gpiochip} ${this.doorRelayPin}=0`;
+    this.log("Relay pulse: %s", cmd);
+    exec(cmd, { timeout: ms + 3000 }, (err) => {
+        if (err && !err.killed) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
     });
 }
 

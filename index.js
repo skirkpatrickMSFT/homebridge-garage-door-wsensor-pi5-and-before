@@ -178,15 +178,26 @@ GarageDoorOpener.prototype.setState = function (activate) {
     var seconds = (ms / 1000).toFixed(3);
     var chip = this.gpiochip;
     var pin = this.doorRelayPin;
-    // Pi 5 / gpiod v2: pin holds its last value after process exits, so we must
-    // explicitly drive HIGH after the pulse. Background gpioset (LOW), sleep,
-    // kill it, then drive HIGH to release the relay.
-    var cmd = this.legacyGpiod
-        ? `gpioset -m time -u ${ms * 1000} ${chip} ${pin}=0`
-        : `sh -c "gpioset -c ${chip} ${pin}=0 & sleep ${seconds}; kill $! 2>/dev/null; gpioset -c ${chip} ${pin}=1"`;
-    this.log("Relay pulse: %s", cmd);
-    exec(cmd, { timeout: ms + 5000 }, (err) => {
-        if (err) this.log.error('gpioset relay error: ' + err.message.split('\n')[0]);
+
+    if (this.legacyGpiod) {
+        exec(`gpioset -m time -u ${ms * 1000} ${chip} ${pin}=0`, { timeout: ms + 5000 }, (err) => {
+            if (err) this.log.error('Relay error: ' + err.message.split('\n')[0]);
+        });
+        return;
+    }
+
+    // Pi 5 / gpiod v2: pin holds its last value after process exits.
+    // Step 1 — drive LOW (relay ON) for duration; exec callback fires when timeout kills gpioset.
+    // Step 2 — 100ms later (enough for kernel to release the line), drive HIGH (relay OFF).
+    //           timeout 2 holds the HIGH so pin stays HIGH even after that gpioset is killed.
+    this.log("Relay pulse: pin=%s LOW for %dms", pin, ms);
+    exec(`timeout ${seconds} gpioset -c ${chip} ${pin}=0`, { timeout: ms + 2000 }, () => {
+        setTimeout(() => {
+            this.log("Relay release: pin=%s HIGH", pin);
+            exec(`timeout 2 gpioset -c ${chip} ${pin}=1`, { timeout: 5000 }, (err) => {
+                if (err && err.code !== 124) this.log.error('Relay OFF error: ' + err.message.split('\n')[0]);
+            });
+        }, 100);
     });
 }
 

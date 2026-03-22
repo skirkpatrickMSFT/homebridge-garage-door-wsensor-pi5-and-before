@@ -54,6 +54,10 @@ function GarageDoorOpener(log, config) {
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
     if (!is_int(this.duration)) throw new Error("The config value 'duration' must be an integer number of milliseconds.");
+    // Validate pin/chip values to prevent command injection via config
+    if (!/^\d+$/.test(String(this.doorRelayPin))) throw new Error("'doorRelayPin' must be a plain integer.");
+    if (!/^\d+$/.test(String(this.doorSensorPin))) throw new Error("'doorSensorPin' must be a plain integer.");
+    if (this.gpiochip && !/^[a-zA-Z0-9]+$/.test(this.gpiochip)) throw new Error("'gpiochip' must be alphanumeric (e.g. gpiochip0).");
 
     if (!this.gpiochip) {
         this.gpiochip = detectGpioChip(this.log);
@@ -133,7 +137,8 @@ GarageDoorOpener.prototype.getSensorStatusAsync = function () {
 }
 
 GarageDoorOpener.prototype.checkSensor = function (callback) {
-    setTimeout(() => {
+    callback(null);
+    const poll = () => {
         this.doorState = this.readSensorState();
         if (this.service && this.doorState !== this.sensorChange) {
             // Only update CurrentDoorState - updating TargetDoorState triggers the onSet
@@ -159,10 +164,9 @@ GarageDoorOpener.prototype.checkSensor = function (callback) {
             this._mismatchSince = null;
         }
 
-        this.checkSensor(callback);
-    }, 500);
-
-    callback(null);
+        setTimeout(poll, 500);
+    };
+    setTimeout(poll, 500);
 }
 
 GarageDoorOpener.prototype.readSensorState = function () {
@@ -221,7 +225,7 @@ GarageDoorOpener.prototype.setState = function (activate) {
 // Homebridge 1.x: callback-based set handler
 GarageDoorOpener.prototype.setDoorState = function (newState, callback) {
     this.targetState = newState;
-    this.log("Relay triggered: target=%s current=%s", newState, this.readSensorState());
+    this.log("Relay triggered: target=%s", newState);
     this.setState(1);
     callback(null);
 }
@@ -229,7 +233,7 @@ GarageDoorOpener.prototype.setDoorState = function (newState, callback) {
 // Homebridge 2.0: promise-based set handler
 GarageDoorOpener.prototype.setDoorStateAsync = function (newState) {
     this.targetState = newState;
-    this.log("Relay triggered: target=%s current=%s", newState, this.readSensorState());
+    this.log("Relay triggered: target=%s", newState);
     this.setState(1);
     return Promise.resolve();
 }
@@ -243,10 +247,6 @@ var is_int = function (n) {
     return n % 1 === 0;
 }
 
-var is_defined = function (v) {
-    return typeof v !== 'undefined';
-}
-
 var defaultVal = function (v, dflt) {
-    return is_defined(v) ? v : dflt;
+    return typeof v !== 'undefined' ? v : dflt;
 }

@@ -48,6 +48,8 @@ function GarageDoorOpener(log, config) {
     this.targetState = 0;     // desired state from HomeKit commands
     this.sensorChange = 0;
     this.service = null;
+    this.lastRelayFire = 0;   // timestamp of last relay activation
+    this._mismatchSince = null; // when target/current mismatch was first detected
 
     if (!this.doorRelayPin) throw new Error("You must provide a config value for 'doorRelayPin'.");
     if (!this.doorSensorPin) throw new Error("You must provide a config value for 'doorSensorPin'.");
@@ -139,6 +141,24 @@ GarageDoorOpener.prototype.checkSensor = function (callback) {
             this.service.getCharacteristic(CurrentDoorState).updateValue(this.doorState);
             this.sensorChange = this.doorState;
         }
+
+        // Auto-sync TargetDoorState when it has been out of sync with the sensor for a while
+        // AND the relay hasn't fired recently. This fixes "opening"/"closing" shown in HomeKit
+        // when the door is operated via the wall button outside of HomeKit.
+        if (this.service && this.doorState !== this.targetState) {
+            var now = Date.now();
+            if (!this._mismatchSince) this._mismatchSince = now;
+            // Only sync if mismatch has persisted >=5s AND relay last fired >=30s ago
+            if ((now - this._mismatchSince) >= 5000 && (now - this.lastRelayFire) >= 30000) {
+                this.log('TargetDoorState out of sync — resyncing to sensor state %d', this.doorState);
+                this.targetState = this.doorState;
+                this.service.getCharacteristic(TargetDoorState).updateValue(this.doorState);
+                this._mismatchSince = null;
+            }
+        } else {
+            this._mismatchSince = null;
+        }
+
         this.checkSensor(callback);
     }, 500);
 
@@ -186,6 +206,7 @@ GarageDoorOpener.prototype.setState = function (activate) {
     // Step 1 — drive LOW (relay ON) for duration; exec callback fires when timeout kills gpioset.
     // Step 2 — 100ms later (enough for kernel to release the line), drive HIGH (relay OFF).
     //           timeout 2 holds the HIGH so pin stays HIGH even after that gpioset is killed.
+    this.lastRelayFire = Date.now();
     this.log("Relay pulse: pin=%s LOW for %dms", pin, ms);
     exec(`timeout ${seconds} gpioset -c ${chip} ${pin}=0`, { timeout: ms + 2000 }, () => {
         setTimeout(() => {

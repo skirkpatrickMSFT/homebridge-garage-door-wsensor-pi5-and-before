@@ -1,7 +1,7 @@
 {
   "name": "homebridge-garage-door-wsensor-pi5-and-before",
   "displayName": "Garage Door Opener with Sensor",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Homebridge plugin for Garage Door Opener - Raspberry Pi",
   "main": "index.js",
   "author": "@skirkpatrick88",

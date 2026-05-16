@@ -128,23 +128,49 @@ GarageDoorOpener.prototype.getServices = function () {
 
 // Homebridge 1.x: callback-based get handler
 GarageDoorOpener.prototype.getSensorStatus = function (callback) {
-    callback(null, this.readSensorState());
+    // During an active transition, report the transitional state (OPENING/CLOSING)
+    // so CarPlay and other polling clients see the correct intermediate state.
+    var recentRelay = (Date.now() - this.lastRelayFire) < 30000;
+    var sensor = this.readSensorState();
+    if (recentRelay && sensor !== this.targetState) {
+        var transitional = (this.targetState === TargetDoorState.OPEN)
+            ? CurrentDoorState.OPENING : CurrentDoorState.CLOSING;
+        callback(null, transitional);
+    } else {
+        callback(null, sensor);
+    }
 }
 
 // Homebridge 2.0: promise-based get handler
 GarageDoorOpener.prototype.getSensorStatusAsync = function () {
-    return Promise.resolve(this.readSensorState());
+    // During an active transition, report the transitional state (OPENING/CLOSING)
+    // so CarPlay and other polling clients see the correct intermediate state.
+    var recentRelay = (Date.now() - this.lastRelayFire) < 30000;
+    var sensor = this.readSensorState();
+    if (recentRelay && sensor !== this.targetState) {
+        var transitional = (this.targetState === TargetDoorState.OPEN)
+            ? CurrentDoorState.OPENING : CurrentDoorState.CLOSING;
+        return Promise.resolve(transitional);
+    }
+    return Promise.resolve(sensor);
 }
 
 GarageDoorOpener.prototype.checkSensor = function (callback) {
     callback(null);
     const poll = () => {
         this.doorState = this.readSensorState();
+        var recentRelay = (Date.now() - this.lastRelayFire) < 30000;
+
         if (this.service && this.doorState !== this.sensorChange) {
-            // Only update CurrentDoorState - updating TargetDoorState triggers the onSet
-            // handler which would fire the relay
-            this.service.getCharacteristic(CurrentDoorState).updateValue(this.doorState);
-            this.sensorChange = this.doorState;
+            if (recentRelay && this.doorState !== this.targetState) {
+                // Door is in transit (relay fired recently and sensor hasn't reached target).
+                // Keep the OPENING/CLOSING transitional state — don't overwrite with OPEN/CLOSED.
+                this.sensorChange = this.doorState;
+            } else {
+                // Sensor reached the target state, or no active relay — update to final state.
+                this.service.getCharacteristic(CurrentDoorState).updateValue(this.doorState);
+                this.sensorChange = this.doorState;
+            }
         }
 
         // Auto-sync TargetDoorState when it has been out of sync with the sensor for a while
@@ -158,6 +184,7 @@ GarageDoorOpener.prototype.checkSensor = function (callback) {
                 this.log('TargetDoorState out of sync — resyncing to sensor state %d', this.doorState);
                 this.targetState = this.doorState;
                 this.service.getCharacteristic(TargetDoorState).updateValue(this.doorState);
+                this.service.getCharacteristic(CurrentDoorState).updateValue(this.doorState);
                 this._mismatchSince = null;
             }
         } else {
@@ -225,7 +252,11 @@ GarageDoorOpener.prototype.setState = function (activate) {
 // Homebridge 1.x: callback-based set handler
 GarageDoorOpener.prototype.setDoorState = function (newState, callback) {
     this.targetState = newState;
-    this.log("Relay triggered: target=%s", newState);
+    // Set transitional state so CarPlay (and other clients) show OPENING/CLOSING
+    var transitional = (newState === TargetDoorState.OPEN)
+        ? CurrentDoorState.OPENING : CurrentDoorState.CLOSING;
+    this.service.getCharacteristic(CurrentDoorState).updateValue(transitional);
+    this.log("Relay triggered: target=%s, currentDoorState=%s", newState, transitional);
     this.setState(1);
     callback(null);
 }
@@ -233,7 +264,11 @@ GarageDoorOpener.prototype.setDoorState = function (newState, callback) {
 // Homebridge 2.0: promise-based set handler
 GarageDoorOpener.prototype.setDoorStateAsync = function (newState) {
     this.targetState = newState;
-    this.log("Relay triggered: target=%s", newState);
+    // Set transitional state so CarPlay (and other clients) show OPENING/CLOSING
+    var transitional = (newState === TargetDoorState.OPEN)
+        ? CurrentDoorState.OPENING : CurrentDoorState.CLOSING;
+    this.service.getCharacteristic(CurrentDoorState).updateValue(transitional);
+    this.log("Relay triggered: target=%s, currentDoorState=%s", newState, transitional);
     this.setState(1);
     return Promise.resolve();
 }
